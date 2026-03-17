@@ -1,0 +1,3 @@
+reward:
+  reward_type: LEARNED
+  learned_model_path: outputs/reward_model/best.pt

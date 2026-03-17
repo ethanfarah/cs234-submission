@@ -1,0 +1,4 @@
+reward:
+  reward_type: HYBRID
+  kl_coeff: 0.01
+  compression_penalty: 2.0

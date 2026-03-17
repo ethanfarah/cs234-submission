@@ -1,0 +1,4 @@
+data:
+  dataset: squad
+  train_split: train
+  val_split: validation

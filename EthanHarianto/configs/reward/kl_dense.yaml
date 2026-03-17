@@ -1,0 +1,4 @@
+reward:
+  reward_type: KL_DENSE
+  kl_coeff: 0.01
+  compression_bonus: 1.0

@@ -1,0 +1,27 @@
+name: prompt-compression
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pytorch>=2.6  # CVE-2025-32434: transformers/torch.load requires 2.6+
+  - torchvision
+  - torchaudio
+  - pip
+  - pip:
+      - transformers>=4.36
+      - datasets
+      - accelerate
+      - bitsandbytes
+      - wandb
+      - gymnasium
+      - rouge-score
+      - bert-score
+      - omegaconf
+      - rich
+      - pytest
+      - sentencepiece
+      - protobuf
+      - spacy>=3.0

@@ -1,0 +1,4 @@
+data:
+  dataset: meetingbank
+  train_split: train
+  val_split: validation

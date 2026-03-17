@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-compression"
+version = "0.1.0"
+description = "RL-based prompt compression for LLMs (CS 234 project)"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.36",
+    "datasets",
+    "accelerate",
+    "bitsandbytes",
+    "wandb",
+    "gymnasium",
+    "rouge-score",
+    "bert-score",
+    "omegaconf",
+    "rich",
+    "sentencepiece",
+    "protobuf",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["network: tests that require network access (e.g., HuggingFace downloads)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

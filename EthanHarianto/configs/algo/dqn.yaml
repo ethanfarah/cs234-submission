@@ -1,0 +1,10 @@
+algo:
+  algo_type: DQN
+  lr: 1.0e-4
+  gamma: 0.99
+  buffer_size: 50000
+  batch_size: 64
+  target_update_freq: 200
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 10000
