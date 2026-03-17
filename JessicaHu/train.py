@@ -1,5 +1,3 @@
-"""Training loop with factory functions for creating components."""
-
 from __future__ import annotations
 
 import random
@@ -47,7 +45,6 @@ if TYPE_CHECKING:
 
 
 def create_policy(config: PolicyConfig) -> Policy:
-    """Factory that returns the right policy based on config.arch."""
     if config.arch == PolicyArch.DISTILBERT:
         from src.policy.distilbert import DistilBERTPolicy
         return DistilBERTPolicy(config)
@@ -61,7 +58,6 @@ def create_policy(config: PolicyConfig) -> Policy:
 
 
 def create_algorithm(policy: Policy, config: AlgoConfig) -> Algorithm:
-    """Factory that returns the right algorithm based on config.algo_type."""
     if config.algo_type == AlgoType.REINFORCE:
         from src.algo.reinforce import REINFORCE
         return REINFORCE(policy, config)
@@ -80,14 +76,12 @@ def create_algorithm(policy: Policy, config: AlgoConfig) -> Algorithm:
     if config.algo_type == AlgoType.GRPO:
         from src.algo.grpo import GRPO
         return GRPO(policy, config)
-    raise ValueError(f"Unknown algo type: {config.algo_type}")
 
 
 def create_reward(
     config: RewardConfig,
     kl_cache: KLCache | None = None,
 ) -> RewardFunction:
-    """Factory that returns the right reward function based on config."""
     if config.reward_type == RewardType.SPARSE:
         return SparseReward(config)
     if config.reward_type in (RewardType.KL_DENSE, RewardType.HYBRID):
@@ -103,24 +97,16 @@ def create_reward(
     if config.reward_type == RewardType.LEARNED:
         from src.reward.learned import LearnedReward
         return LearnedReward(config)
-    raise ValueError(f"Unknown reward type: {config.reward_type}")
 
 
 def load_data(
     config: DataConfig,
     tokenizer_model: str | None = None,
 ) -> tuple[list[Prompt], list[Prompt]]:
-    """Load train/val data based on config.dataset.
-
-    tokenizer_model: if set, used for tokenization (e.g. match LLM for smoke tests).
-    When None, loaders use their default (Llama for SQuAD/MeetingBank).
-    """
     if config.dataset == "squad":
         loader = load_squad
     elif config.dataset == "meetingbank":
         loader = load_meetingbank
-    else:
-        raise ValueError(f"Unknown dataset: {config.dataset}")
 
     base_kwargs: dict[str, Any] = dict(max_length=config.max_prompt_tokens)
     if tokenizer_model is not None:
@@ -144,16 +130,6 @@ def collect_episode(
     policy: Policy,
     prompt: Prompt,
 ) -> Episode:
-    """Run one full episode: reset env, loop policy, merge log_probs.
-
-    The policy processes each chunk, producing per-token keep/drop decisions.
-    Chunk-level log_probs are merged using the same overlap-dedup logic as
-    actions (earlier chunk wins).
-
-    Returned log_probs are detached (collected under torch.no_grad).
-    Algorithms that need gradients through log_probs (e.g. REINFORCE)
-    must recompute them via policy.evaluate_actions() at update time.
-    """
     device = next(policy.parameters()).device
     obs = env.reset(prompt)
     obs = obs.to(device)
@@ -163,51 +139,22 @@ def collect_episode(
     while not done:
         with torch.no_grad():
             actions, log_probs = policy.act(obs)
-        if actions.shape[0] != 1:
-            raise ValueError(
-                f"collect_episode requires batch=1, got {actions.shape[0]}"
-            )
         chunk_log_probs.append(log_probs[0])
         obs, _reward, done, _info = env.step(actions[0])
         obs = obs.to(device)
 
     episode = env.get_episode()
-    # merge_chunk_actions is dtype-agnostic; overlap-dedup applies to log_probs too
     episode.log_probs = merge_chunk_actions(chunk_log_probs, env.chunk_config)
     return episode
 
 
 def _empty_penalty(reward_fn: RewardFunction) -> float:
-    """Scale empty-compression penalty by reward type.
-
-    Must be significantly worse than any real compression to prevent
-    policies (especially PPO) from converging on "drop everything".
-
-    KL_DENSE per-token rewards with kl_coeff=0.01 produce episode
-    rewards in [-3, -1]. Penalty = -500 * kl_coeff = -5.0 at default,
-    well below the worst real compression (~-3.2).
-
-    SparseReward and HybridReward terminal rewards are in [0, 1];
-    -5.0 is strongly punitive.
-    """
     if isinstance(reward_fn, KLDenseReward):
         return -500.0 * reward_fn.config.kl_coeff
     return -5.0
 
 
 def _keepall_penalty(reward_fn: RewardFunction) -> float | None:
-    """Penalty for keeping all tokens (ratio > 0.99).
-
-    Only applies to KLDenseReward, which has no natural compression
-    incentive (keeping all tokens yields reward=0). Sparse and hybrid
-    rewards can still generate valid LLM output at high ratios, so
-    they should compute rewards normally.
-
-    Scale mirrors _empty_penalty: -500 * kl_coeff puts the penalty well
-    below worst real compression (~-3.2 at kl_coeff=0.01).
-
-    Returns None for reward types that don't need this penalty.
-    """
     if isinstance(reward_fn, KLDenseReward):
         return -500.0 * reward_fn.config.kl_coeff
     return None
@@ -219,26 +166,6 @@ def score_episode(
     frozen_llm: FrozenLLM | None,
     kl_cache: KLCache | None = None,
 ) -> str | None:
-    """Compute reward and write it into episode in-place.
-
-    For dense rewards: caches full-prompt logits, computes per-token reward,
-    scatters into (seq_len,) via keep_mask.
-    For sparse rewards: generates LLM output, computes scalar terminal reward.
-
-    Short-circuits with a penalty if the policy drops all tokens (empty
-    compression) or keeps all tokens under KLDenseReward (no compression
-    incentive). Sparse/hybrid rewards at high ratios proceed normally.
-
-    Returns the LLM output string (for reward hacking monitoring), or None if
-    the episode was short-circuited by a penalty.
-    """
-    if frozen_llm is None:
-        raise ValueError(
-            "frozen_llm is required to score episodes; "
-            "ensure reward type is configured with LLM access"
-        )
-
-    # token_ids is 1-D (compressed_len,); shape[0] is the token count
     if episode.compressed.token_ids.shape[0] == 0:
         episode.terminal_reward = _empty_penalty(reward_fn)
         return None
@@ -275,11 +202,6 @@ def _apply_reward(
     reward: torch.Tensor,
     reward_fn: RewardFunction,
 ) -> None:
-    """Write reward into episode fields.
-
-    Dense: scatter (compressed_len,) into (seq_len,) via keep_mask.
-    Sparse: set terminal_reward scalar.
-    """
     if reward_fn.is_dense():
         full_rewards = torch.zeros_like(episode.actions, dtype=torch.float)
         full_rewards[episode.compressed.keep_mask.bool()] = reward.float()
@@ -294,14 +216,6 @@ def _apply_reward(
 
 
 def _compute_actual_f1(llm_output: str, metadata: dict[str, Any]) -> float | None:
-    """Compute F1 between LLM output and ground-truth answers.
-
-    Used to monitor reward hacking: if the learned reward increases but
-    actual_f1 stays flat or drops, the policy is exploiting the reward model.
-
-    Returns None for unanswerable questions (empty answer_texts) to avoid
-    polluting the metric with systematic zeros.
-    """
     answer_texts: list[str] = metadata.get("answer_texts", [])
     if not answer_texts:
         return None
@@ -310,8 +224,6 @@ def _compute_actual_f1(llm_output: str, metadata: dict[str, Any]) -> float | Non
 
 @dataclass
 class Components:
-    """Bundle of initialized training components."""
-
     env: CompressionEnv
     policy: Policy
     algorithm: Algorithm
@@ -325,7 +237,6 @@ class Components:
 def _create_llm_components(
     config: ExperimentConfig,
 ) -> tuple[FrozenLLM | None, KLCache | None]:
-    """Create FrozenLLM and KLCache based on reward type."""
     needs_llm = config.reward.reward_type in (
         RewardType.SPARSE, RewardType.KL_DENSE, RewardType.HYBRID, RewardType.LEARNED,
     )
@@ -344,7 +255,6 @@ def _create_llm_components(
 
 
 def init_components(config: ExperimentConfig) -> Components:
-    """Create all training components from config."""
     frozen_llm, kl_cache = _create_llm_components(config)
     reward_fn = create_reward(config.reward, kl_cache=kl_cache)
     chunk_config = ChunkConfig(
@@ -359,11 +269,6 @@ def init_components(config: ExperimentConfig) -> Components:
     policy = policy.to(config.train.device)
     algorithm = create_algorithm(policy, config.algo)
     train_prompts, val_prompts = load_data(config.data, tokenizer_model=config.llm.model_name)
-    if not train_prompts:
-        raise ValueError("No training prompts loaded; check DataConfig")
-    if not val_prompts:
-        raise ValueError("No validation prompts loaded; check DataConfig")
-
     return Components(
         env=env, policy=policy, algorithm=algorithm,
         reward_fn=reward_fn, train_prompts=train_prompts,
@@ -374,8 +279,6 @@ def init_components(config: ExperimentConfig) -> Components:
 
 @dataclass
 class _LogContext:
-    """Bundle of per-episode data needed for logging."""
-
     ep_idx: int
     episode: Episode
     metrics: dict[str, float]
@@ -386,7 +289,6 @@ class _LogContext:
 
 
 def _log_episode(ctx: _LogContext) -> None:
-    """Build log dict, print summary, push to W&B."""
     reward_scalar = ctx.episode.terminal_reward
     if ctx.config.reward.reward_type in (RewardType.KL_DENSE, RewardType.HYBRID):
         reward_scalar = ctx.episode.rewards.sum().item() + ctx.episode.terminal_reward
@@ -421,7 +323,6 @@ def _log_episode(ctx: _LogContext) -> None:
 
 
 def _set_seeds(seed: int) -> None:
-    """Initialize all RNG seeds for reproducibility."""
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -429,8 +330,6 @@ def _set_seeds(seed: int) -> None:
 
 @dataclass
 class _EarlyStopMonitor:
-    """Stops training when the policy has collapsed (low entropy + high ratio)."""
-
     window: int
     entropy_min: float
     ratio_max: float
@@ -455,12 +354,6 @@ class _EarlyStopMonitor:
 
 
 def train(config: ExperimentConfig) -> None:
-    """Main training loop.
-
-    Creates components, collects episodes, computes rewards, updates policy.
-    Seeds RNGs from config.train.seed for reproducibility.
-    Logs to W&B (if wandb_project is set) and saves checkpoints at configured intervals.
-    """
     _set_seeds(config.train.seed)
     c = init_components(config)
     logger = WandbLogger(config) if config.train.wandb_project else None
@@ -481,7 +374,7 @@ def train(config: ExperimentConfig) -> None:
             llm_output = score_episode(episode, c.reward_fn, c.frozen_llm, c.kl_cache)
             metrics = c.algorithm.update([episode])
 
-            entropy = metrics.get("entropy", 1.0)  # high default → never triggers early stop
+            entropy = metrics.get("entropy", 1.0)  
             ratio = episode.compressed.compression_ratio
             if early_stop.check(entropy, ratio):
                 _log_episode(_LogContext(
@@ -514,7 +407,6 @@ def train(config: ExperimentConfig) -> None:
 
 
 def main() -> None:
-    """CLI entry point: parse args and call train."""
     config = parse_args()
     train(config)
 

@@ -1,5 +1,3 @@
-"""Frozen LLM wrapper for generation and logit extraction."""
-
 from __future__ import annotations
 
 import warnings
@@ -9,24 +7,15 @@ import torch
 from torch import Tensor
 
 from transformers import AutoModelForCausalLM
+from transformers import BitsAndBytesConfig
+
 
 from src.config import LlmConfig
 from src.data.tokenization import get_tokenizer
 
 
 class FrozenLLM:
-    """Frozen LLM wrapper with optional 4-bit quantization.
-
-    Provides generation and logit extraction without gradient tracking.
-    Quantization requires CUDA; CPU mode uses full-precision weights.
-    """
-
     def __init__(self, config: LlmConfig, device: str = "cuda") -> None:
-        if config.quantize and not torch.cuda.is_available():
-            raise RuntimeError(
-                "4-bit quantization requires CUDA, but no GPU is available. "
-                "Set quantize=False for CPU inference."
-            )
         self.config = config
         self.device = device
         self.tokenizer = get_tokenizer(config.model_name)
@@ -37,20 +26,12 @@ class FrozenLLM:
     def _load_model(self) -> AutoModelForCausalLM:
         if self.config.quantize:
             return self._load_quantized()
-        warnings.warn(
-            f"Loading {self.config.model_name} in FP32 without quantization. "
-            "Large models (7B+) require ~32GB RAM. Set quantize=True for production.",
-            UserWarning,
-            stacklevel=3,
-        )
         return AutoModelForCausalLM.from_pretrained(
             self.config.model_name,
             torch_dtype=torch.float32,
         ).to(self.device)
 
     def _load_quantized(self) -> AutoModelForCausalLM:
-        from transformers import BitsAndBytesConfig
-
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -66,15 +47,6 @@ class FrozenLLM:
 
     @torch.no_grad()
     def generate(self, input_ids: Tensor, max_new_tokens: int | None = None) -> str:
-        if input_ids.dim() != 2 or input_ids.shape[0] != 1:
-            raise ValueError(
-                f"input_ids must be 2-D with batch size 1, got shape {input_ids.shape}"
-            )
-        if input_ids.shape[1] == 0:
-            raise ValueError(
-                "Cannot generate from empty prompt (0 tokens). "
-                "Policy dropped all tokens during compression."
-            )
         if max_new_tokens is None:
             max_new_tokens = self.config.max_new_tokens
         prompt_len = input_ids.shape[1]
@@ -102,20 +74,6 @@ class FrozenLLM:
 
     @torch.no_grad()
     def get_logits(self, input_ids: Tensor) -> Tensor:
-        if input_ids.dim() != 2:
-            raise ValueError(
-                f"input_ids must be 2-D, got shape {input_ids.shape}"
-            )
-        if input_ids.shape[1] == 0:
-            raise ValueError(
-                "Cannot compute logits for empty prompt (0 tokens). "
-                "Policy dropped all tokens during compression."
-            )
         input_ids = input_ids.to(self.model.device)
         logits = self.model(input_ids).logits
-        if logits is None:
-            raise RuntimeError(
-                f"Model {self.config.model_name} returned None logits. "
-                "Ensure the model has a language modeling head."
-            )
         return logits.detach().cpu()

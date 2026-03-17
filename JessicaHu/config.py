@@ -1,5 +1,3 @@
-"""Typed configuration dataclasses with YAML loading via OmegaConf."""
-
 from __future__ import annotations
 
 import argparse
@@ -88,8 +86,8 @@ class RewardConfig:
     learned_model_path: str | None = None
     target_compression_ratio: float = 0.5
     hybrid_mode: HybridMode = HybridMode.WEIGHTED
-    threshold_tau: float = 0.1  # per-token KL typically in [0.01, 3.0] nats; 0.1 ≈ 10th-20th percentile
-    threshold_penalty: float = 0.01  # penalty applied when KL exceeds tau
+    threshold_tau: float = 0.1 
+    threshold_penalty: float = 0.01 
     kl_direction: KLDirection = KLDirection.FORWARD
     sparse_reward_mode: SparseRewardMode = SparseRewardMode.MULTIPLICATIVE
     quality_threshold: float = 0.7
@@ -119,11 +117,6 @@ class AlgoConfig:
 
 @dataclass
 class LlmConfig:
-    """Configuration for the frozen LLM used for generation and logit extraction.
-
-    temperature and top_p are only used when do_sample=True.
-    Production configs should set quantize=True via YAML.
-    """
 
     model_name: str = "meta-llama/Llama-3.1-8B"
     max_new_tokens: int = 256
@@ -162,7 +155,6 @@ class ExperimentConfig:
 
 
 def load_config(yaml_paths: list[str]) -> ExperimentConfig:
-    """Load and merge multiple YAML config files into an ExperimentConfig."""
     base = OmegaConf.structured(ExperimentConfig)
     for path in yaml_paths:
         override = OmegaConf.load(path)
@@ -172,7 +164,6 @@ def load_config(yaml_paths: list[str]) -> ExperimentConfig:
 
 
 def parse_args() -> ExperimentConfig:
-    """Parse CLI arguments: --config file1.yaml file2.yaml ... + any dot-notation overrides."""
     parser = argparse.ArgumentParser(description="RL Prompt Compression")
     parser.add_argument(
         "--config",
