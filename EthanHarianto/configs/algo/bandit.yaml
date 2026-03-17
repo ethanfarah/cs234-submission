@@ -1,0 +1,7 @@
+algo:
+  algo_type: BANDIT
+  lr: 3.0e-4
+  entropy_coeff: 0.05
+  epsilon_start: 0.3   # exploration rate at init
+  epsilon_end: 0.01    # floor after decay
+  epsilon_decay: 5000  # linear decay steps to reach epsilon_end

@@ -1,0 +1,6 @@
+policy:
+  arch: DISTILBERT
+  pretrained_name: distilbert-base-uncased
+  causal: false
+  # Give policy target_compression_ratio so it can bias toward ~0.5 (avoids collapse to drop-all).
+  ratio_conditioned: true

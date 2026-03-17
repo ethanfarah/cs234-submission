@@ -1,0 +1,14 @@
+# 3-episode smoke test. Use with CPU + tiny model when no GPU:
+#   --config configs/base.yaml configs/env/squad.yaml configs/policy/distilbert.yaml configs/algo/bandit.yaml configs/reward/sparse.yaml configs/profiles/smoke.yaml
+# For GPU smoke, omit this profile and pass overrides directly, e.g.:
+#   ... -- train.num_episodes=3 train.wandb_project=null
+data:
+  max_train_samples: 10
+  max_val_samples: 10
+train:
+  num_episodes: 3
+  wandb_project: null
+  device: cpu
+llm:
+  model_name: sshleifer/tiny-gpt2
+  quantize: false

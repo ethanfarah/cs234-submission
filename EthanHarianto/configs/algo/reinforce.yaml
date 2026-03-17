@@ -1,0 +1,6 @@
+algo:
+  algo_type: REINFORCE
+  lr: 1.0e-4
+  gamma: 1.0
+  entropy_coeff: 0.05
+  baseline_type: MOVING_AVERAGE

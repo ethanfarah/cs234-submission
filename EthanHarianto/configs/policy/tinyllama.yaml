@@ -1,0 +1,5 @@
+policy:
+  arch: TINYLLAMA
+  pretrained_name: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+  causal: true
+  ratio_conditioned: true

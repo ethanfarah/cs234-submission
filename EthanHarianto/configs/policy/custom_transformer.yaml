@@ -1,0 +1,7 @@
+policy:
+  arch: CUSTOM_TRANSFORMER
+  hidden_dim: 256
+  num_layers: 4
+  num_heads: 4
+  dropout: 0.1
+  causal: false
